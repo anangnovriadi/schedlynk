@@ -1,0 +1,215 @@
+````bash
+# ===== “Scheduler‑Lite” — MULTI‑TEAM EXTENSION =====
+# Copy‑paste this whole block into Replit’s “Generate Code with AI”
+# (It overrides / extends the previous prompt.)
+
+# === NEW REQUIREMENT ===
+# ▸ Support multiple *Teams* per hosted instance.
+# ▸ Each Team has 1..N Users with ROLE = ADMIN | MEMBER.
+# ▸ A “Service” always belongs to a single Team.
+# ▸ Only Team‑members can be Service‑members (round‑robin pool).
+# ▸ UI scope = Team switcher + per‑team sidebar (Event Setup, …).
+
+# === HIGH‑LEVEL TASKS (incremental from previous list) ===
+1. ## Update dependencies  ####################################################
+   pnpm add @prisma/client
+   pnpm add -D prisma
+
+2. ## Extend Prisma models ####################################################
+   # file: prisma/schema.prisma
+   datasource db { provider = "postgresql" url = env("DATABASE_URL") }
+   generator client { provider = "prisma-client-js" }
+
+   enum TeamRole { ADMIN MEMBER }
+
+   model User {
+     id        String        @id @default(cuid())
+     email     String        @unique
+     name      String?
+     teamLinks TeamMember[]
+     svcLinks  ServiceMember[]
+     bookings  Booking[]
+   }
+
+   model Team {
+     id       String        @id @default(cuid())
+     name     String
+     slug     String        @unique
+     members  TeamMember[]
+     services Service[]
+   }
+
+   model TeamMember {
+     id     String   @id @default(cuid())
+     user   User     @relation(fields: [userId], references: [id])
+     userId String
+     team   Team     @relation(fields: [teamId], references: [id])
+     teamId String
+     role   TeamRole @default(MEMBER)
+     ## optional personal round‑robin order per Service can live here
+   }
+
+   model Service {
+     id          String          @id @default(cuid())
+     team        Team            @relation(fields: [teamId], references: [id])
+     teamId      String
+     name        String
+     description String
+     duration    Int             @default(15)
+     members     ServiceMember[]
+     limits      ServiceLimit?
+   }
+
+   model ServiceMember {
+     id        String  @id @default(cuid())
+     service   Service @relation(fields: [serviceId], references: [id])
+     serviceId String
+     user      User    @relation(fields: [userId], references: [id])
+     userId    String
+     order     Int
+     @@unique([serviceId, userId])
+   }
+
+   model ServiceLimit {
+     id                  String  @id @default(cuid())
+     service   Service   @relation(fields: [serviceId], references: [id])
+     serviceId String    @unique
+     maxPerDay          Int
+     rollingWindowHours Int
+   }
+
+   model Booking {
+     id        String   @id @default(cuid())
+     service   Service  @relation(fields: [serviceId], references: [id])
+     serviceId String
+     user      User     @relation(fields: [userId], references: [id])
+     userId    String
+     start     DateTime
+     end       DateTime
+   }
+
+   # Run ➜  npx prisma migrate dev --name add_teams
+
+3. ## Auth & Session ##########################################################
+   • Keep NextAuth (email magic‑link + Google).  
+   • After login:  
+     – Fetch `teamIds` via `TeamMember` and store `currentTeamId` in session.  
+     – If user belongs to 0 teams ⇒ create default Team & make ROLE=ADMIN.
+
+4. ## tRPC middlewares ########################################################
+   • `withTeam`: validates `ctx.session.currentTeamId` header/query param, verifies membership, injects `teamId` into resolver context.  
+   • Update all resolvers (`createService`, `createBooking`, etc.) to read `teamId`.
+
+5. ## Round‑Robin update ######################################################
+   utils/roundRobin.ts
+   ```ts
+   export const nextAssignee = async (prisma, serviceId: string) => {
+     const members = await prisma.serviceMember.findMany({
+       where: { serviceId },
+       orderBy: { order: 'asc' },
+       take: 1,
+     });
+     const chosen = members[0];
+     await prisma.serviceMember.update({
+       where: { id: chosen.id },
+       data: { order: chosen.order + 1 },
+     });
+     return chosen.userId;
+   };
+````
+
+(order is per‑service, unaffected by other teams)
+
+6. ## UI additions
+
+   • `/dashboard` ➜ list Teams (cards); clicking sets session `teamId`.
+   • `/teams/[teamId]/services` = **existing** Services page.
+   • Show “Manage Team” link to admins (invite member, promote/demote).
+   • Sidebar unchanged but scoped per‑Team.
+
+7. ## CLI seed script
+
+   /prisma/seed.ts
+   – Creates demo users, two teams, assigns admin/member, seeds one 15‑min service.
+
+8. ## RBAC guards
+
+   • Only ADMIN may: create/update Service, invite members, change limits.
+   • MEMBER may: view calendar, be assigned, create self bookings subject to limits.
+
+9. ## Tests
+
+   vitest
+   – ensure `nextAssignee` cycles only within Service’s members.
+   – check unauthorized mutation returns 403.
+
+10. ## replit.nix
+
+{ pkgs }: { deps = \[ pkgs.nodejs\_20 pkgs.postgresql ] }
+
+11. ## README patch
+
+• Add “Multi‑team tenancy” section: explains currentTeamId, RBAC, slug‑based URLs.
+• ENV additions: `POSTGRES_PRISMA_SCHEMA=public`.
+
+12. ## Clean‑room reminder
+
+• All code typed from scratch, no AGPL imports.
+• Docs may reference Cal.com *behaviour* for parity only.
+
+# === GENERATED FILES =========================================================
+
+# (only new / changed files included below)
+
+# prisma/schema.prisma
+
+<\<see Section 2 above>>
+
+# replit.nix
+
+{ pkgs }: { deps = \[ pkgs.nodejs\_20 pkgs.postgresql ] }
+
+# utils/roundRobin.ts
+
+export const nextAssignee = async (prisma, serviceId) => {
+const \[picked] = await prisma.serviceMember.findMany({
+where: { serviceId },
+orderBy: { order: 'asc' },
+take: 1,
+});
+await prisma.serviceMember.update({
+where: { id: picked.id },
+data: { order: picked.order + 1 },
+});
+return picked.userId;
+};
+
+# prisma/seed.ts (excerpt)
+
+import { PrismaClient } from '@prisma/client';
+const prisma = new PrismaClient();
+async function main() {
+const alice = await prisma.user.upsert({
+where: { email: '[admin@example.com](mailto:admin@example.com)' },
+create: { email: '[admin@example.com](mailto:admin@example.com)', name: 'Alice Admin' },
+update: {},
+});
+const team = await prisma.team.create({
+data: {
+name: 'Demo Team',
+slug: 'demo',
+members: { create: { userId: alice.id, role: 'ADMIN' } },
+},
+});
+await prisma.service.create({
+data: {
+name: '15‑min Intro Call',
+teamId: team.id,
+members: { create: { userId: alice.id, order: 0 } },
+},
+});
+}
+main().catch(console.error).finally(() => prisma.\$disconnect());
+
+```
+```

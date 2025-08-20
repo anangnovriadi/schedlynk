@@ -1,0 +1,126 @@
+Below is an **incremental add‑on** you can paste **after** the previous Scheduler‑Lite prompt.
+It adds secure **e‑mails with “Reschedule” & “Cancel” links** for every booking.
+
+````text
+# =========================================================
+#  ✉️  E‑MAIL NOTIFICATIONS w/ MANAGE LINKS
+# =========================================================
+#  This patch augments the Calendar layer.  Nothing else changes.
+
+# ---------------- DOMAIN EXTENSION ------------------------------------------
+#  • Booking.manageToken – opaque 32‑char string (bcrypt‑safe) created on
+#    first booking; stored once; used to authenticate guest actions without
+#    login.  (Think Calendly’s “magic link”.)
+#  • Public Manage URL   – `/manage/{bookingId}?token={manageToken}`
+
+# ---------------- PRISMA PATCH ----------------------------------------------
+#  Add the following column & regenerate client:
+#
+#    model Booking {
+#      …   // existing fields
+#      manageToken  String   @default(uuid())  @unique
+#    }
+#
+#  ➜  npx prisma migrate dev --name booking_manage_token
+
+# ---------------- TRPC ROUTER UPDATES ---------------------------------------
+1. booking.create
+   • After DB insert, return `{ manageUrl }`
+     where manageUrl = `${BASE_URL}/manage/${booking.id}?token=${booking.manageToken}`
+
+2. booking.reschedule & booking.cancel
+   • Accept `(bookingId, token, …)` for guest calls.
+   • Validate `manageToken` matches; otherwise 403.
+
+# ---------------- E‑MAIL TEMPLATES ------------------------------------------
+• Use **nodemailer** + **MJML** (bundled by `mjml-loader`) to render HTML.
+
+Template variables:
+  {{guestName}}
+  {{serviceName}}
+  {{teamName}}
+  {{start}}
+  {{end}}
+  {{timeZone}}
+  {{manageUrl}}       // one link; page shows both buttons
+  {{rescheduleUrl}}   // alias of manageUrl + `#reschedule`
+  {{cancelUrl}}       // alias of manageUrl + `#cancel`
+
+File layout:
+  └─ emails/
+     ├─ booking‑confirmed.mjml
+     ├─ booking‑rescheduled.mjml
+     ├─ booking‑cancelled.mjml
+     └─ partials/…
+  
+booking‑confirmed.mjml must contain **two prominent buttons**:
+
+```mjml
+<mj-button href="{{rescheduleUrl}}">Reschedule</mj-button>
+<mj-button href="{{cancelUrl}}">Cancel</mj-button>
+````
+
+• Plain‑text fallback must embed the same two URLs.
+
+# ---------------- /manage PAGE ----------------------------------------------
+
+• GET `/manage/[bookingId]`
+– Validate token query param matches Booking.manageToken.
+– Render summary card + “Reschedule” & “Cancel” buttons.
+– Use React‑Query mutation hooks to call trpc.reschedule / trpc.cancel.
+– After action, show success toast & e‑mail again.
+
+# ---------------- ICS GENERATION --------------------------------------------
+
+• Attach `.ics` file on “confirmed” and “rescheduled” e‑mails; send METHOD:
+– `REQUEST` for NEW / RESCHEDULE
+– `CANCEL`  for cancelled
+• UID = booking.id (stable across reschedules).
+
+# ---------------- ENV ADDITIONS ---------------------------------------------
+
+EMAIL\_HOST=…
+EMAIL\_PORT=…
+EMAIL\_USER=…
+EMAIL\_PASS=…
+EMAIL\_FROM="Scheduler‑Lite [noreply@example.com](mailto:noreply@example.com)"
+
+# ---------------- TESTS ------------------------------------------------------
+
+• vitest: `guest_can_reschedule_via_manage_link.test.ts`
+– Create booking, hit manage URL with valid token → expect 200.
+– Missing / wrong token → expect 403.
+– Reschedule within cutoff → expect 400.
+
+# ---------------- README PATCH ----------------------------------------------
+
+### Email & Magic‑Link Management
+
+Every booking confirmation e‑mail contains **Reschedule** and **Cancel**
+buttons powered by a one‑time manage‑token.  Guests never need an account.
+Admins can always override from the dashboard.
+
+# =========================================================
+
+# ☑ OUTPUT
+
+# • prisma migration
+
+# • emails/\*.mjml templates
+
+# • pages/manage/\[bookingId].tsx
+
+# • trpc router updates
+
+# • vitest for magic‑link
+
+# =========================================================
+
+```
+
+**How to apply**
+
+1. **Paste** this block below your existing Replit prompt and run the AI code‑gen.  
+2. Execute `npx prisma migrate dev`.  
+3. Configure SMTP ENV and test a booking—your inbox should now show buttons that deep‑link to the manage page, letting guests reschedule or cancel in one click.
+```

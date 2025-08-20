@@ -1,0 +1,174 @@
+# =========================================================
+#  SCHEDULER‑LITE · SERVICE + AVAILABILITY CALENDAR RULES
+# =========================================================
+#  This layer augments the existing multi‑team spec.
+
+# ------------- DOMAIN LANGUAGE ----------------------------------------------
+#  • Team        – organisation workspace
+#  • Service     – what external guests book (15‑min fixed duration v0)
+#  • Member      – User linked to a Team (role: ADMIN | MEMBER)
+#  • Availability Window
+#       • One‑off or recurring time ranges a Member can be booked
+#       • Recurrence: stored as RRULE text (e.g. "FREQ=WEEKLY;BYDAY=MO,TU,…")
+#  • Booking     – confirmed reservation (state = SCHEDULED | CANCELLED)
+#  • Public URL  – immutable slug that shows open slots & handles bookings
+
+# ------------- FUNCTIONAL RULES ---------------------------------------------
+
+1.  SERVICE CALENDAR
+    • Each Service exposes a read‑only “merged view” (all Members’ availabilities)
+      at **/book/{teamSlug}/{serviceSlug}**.
+    • Slots derive from:
+        (A) Service duration (15 min)  
+        (B) Service‑level Working‑Hours rule (Mon‑Fri 09‑17 by default)  
+        (C) Members’ individual Availability Windows  
+        (D) Team‑wide Holidays (table: Holiday { date, name })
+      → Intersection of (B)+(C) minus Holidays & existing Bookings.
+    • Slots in the past or < cancellationBuffer minutes from now are hidden.
+
+2.  MEMBER AVAILABILITY CALENDAR
+    • Members manage their own Availability Windows in **/settings/availability**.
+    • Window types:
+        – Recurring weekly (RRULE)  
+        – One‑off date‑range (override)  
+        – Override type = OPEN | CLOSED
+    • UI draws colour‑coded blocks; drag‑resize to edit; can import from .ics.
+
+3.  BOOKING CREATION WORKFLOW
+    a. Guest selects slot → hits `trpc.booking.create`.
+    b. Server:
+       ↳ validates slot still free (row‑level lock)  
+       ↳ runs round‑robin to pick assignee (ServiceMember)  
+       ↳ creates Booking (state=SCHEDULED)  
+       ↳ sends email + .ics attachment to guest & assignee.
+    c. API returns { bookingId, publicManageUrl }
+
+4.  RESCHEDULE FLOW
+    • Actor: GUEST or ADMIN.
+    • Constraints:
+        – Must occur ≥ rescheduleCutoff (default 2 h) before existing start.  
+        – New slot must obey same validation rules.  
+        – On success: update Booking.start/end, emit RESCHEDULED email,
+          update ICS UID so calendar auto‑moves.
+        – Preserve bookingId; append reschedule count to metadata.
+
+5.  CANCELLATION FLOW
+    • Actor: GUEST or ADMIN.
+    • Constraints:
+        – GUEST must cancel ≥ cancellationBuffer (default 24 h) before start.  
+        – ADMIN may cancel anytime.
+    • Action: set state=CANCELLED, send cancellation email + ICS CANCEL method.
+
+6.  PUBLIC ICS FEEDS
+    • Endpoints:  
+        GET /ics/service/{serviceId}.ics      – merged Service feed  
+        GET /ics/member/{memberId}.ics        – individual feed
+    • Data: future SCHEDULED bookings only.
+
+7.  SHARE & EMBED
+    • Each Service exposes:
+        – Public booking page (Next.js SSR)  
+        – `<iframe src="/book/{slug}" …>` embed snippet  
+        – “Copy ICS URL” menu item.
+
+8.  ACCESS CONTROL
+    • Only ADMIN may:
+        – Create/edit Service Working Hours  
+        – Override any Booking (reschedule/cancel)  
+        – Add Holidays
+    • MEMBER may:
+        – Edit own Availability  
+        – View but not change other Members’ windows
+    • Un‑authed guests may only hit public booking + ICS endpoints.
+
+9.  SCHEMA EXTENSIONS  (add to prisma/schema.prisma)
+    ```
+    model AvailabilityWindow {
+      id        String   @id @default(cuid())
+      memberId  String
+      member    TeamMember @relation(fields: [memberId], references: [id])
+      type      AvailabilityType
+      rrule     String?  // null for one‑off
+      start     DateTime // for one‑off: range start
+      end       DateTime // for one‑off: range end
+    }
+    enum AvailabilityType { OPEN CLOSED }
+
+    model Holiday {
+      id     String   @id @default(cuid())
+      teamId String
+      team   Team     @relation(fields: [teamId], references: [id])
+      date   DateTime
+      name   String
+    }
+
+    model Booking {
+      …      // existing fields
+      state  BookingState @default(SCHEDULED)
+      guestEmail String
+      guestName  String?
+      rescheduleCount Int @default(0)
+    }
+    enum BookingState { SCHEDULED CANCELLED }
+    ```
+
+10.  IMPORTANT INVARIANTS
+     • No overlapping Bookings for same Member.  
+     • At least one AvailabilityWindow OPEN must exist per Member or they’re
+       considered unavailable.  
+     • Deleting a MEMBER with future Bookings is blocked unless reassigned.
+
+# ------------- TECHNICAL IMPLEMENTATION TASKS -------------------------------
+
+A. **DB + Migrations** – `prisma migrate dev --name calendar_layer`.
+
+B. **tRPC Routers**
+   • availability.getWindows(memberId)  
+   • availability.upsertWindow()  
+   • booking.create / booking.reschedule / booking.cancel  
+   • ics.serviceFeed / ics.memberFeed  (generate on‑the‑fly)
+
+C. **Slot Engine**
+   • utils/generateSlots.ts:
+     – Inputs: service, dateRange, teamHolidays, memberWindows, existingBookings.
+     – Output: array<{ start, end, memberIds[] }> (one slot per 15 min).
+     – Cache by day in Redis in prod; simple in‑memory Map OK for Replit.
+
+D. **Next.js Pages**
+   • /book/[team]/[service]   (public)  
+   • /manage/[bookingId]      (guest manage)  
+   • /dashboard/services/...  (internal)  
+   • /settings/availability   (member)  
+   • /settings/team-holidays  (admin)
+
+E. **Emails & ICS**
+   • nodemailer + mjml templates.  
+   • ics.generate({ uid: booking.id, method: 'REQUEST' | 'CANCEL', … })
+
+F. **Tests (Vitest)**
+   • Slot engine edge‑cases: daylight‑saving switch, holiday exclusion.  
+   • Reschedule cutoff enforcement.  
+   • Round‑robin integrity across reschedules.
+
+G. **README Addendum**
+   • Document new ENV: `RESCHEDULE_CUTOFF_MIN`, `CANCEL_BUFFER_HR`.  
+   • Explain ICS + embed usage, slot‑generation algorithm, and rate limits
+     on public endpoints (express‑rate‑limit).
+
+# ------------- COMPLIANCE & LICENSING ---------------------------------------
+• All new code is **MIT**; written from scratch (no AGPL copy/paste).  
+• You may reference open RFCs (iCalendar RRULE, RFC 5545) freely.  
+• Mention “Compatible with Cal.com / Calendly behaviour” in docs but provide
+  no copied source.
+
+# =========================================================
+#   ☑ EXPECTED OUTPUT
+# ---------------------------------------------------------
+#   • Updated prisma schema & migration
+#   • utils/generateSlots.ts  (slot engine)
+#   • trpc routers for availability & booking
+#   • Public booking page with share URL & iframe snippet
+#   • Reschedule / cancel flows (API + manage page)
+#   • README sections “Calendar Engine” and “Public Feeds”
+#   • Vitest suite covering slot engine & workflows
+# =========================================================

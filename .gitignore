@@ -75,10 +75,10 @@ scheduler-lite-export.tar.gz
 scheduler-lite-source-export.tar.gz
 
 # Attached assets (user uploads)
-attached_assets/
+# attached_assets/
 
 # Prisma (legacy)
-prisma/
+# prisma/
 
 # Utils (if not needed)
 # utils/
