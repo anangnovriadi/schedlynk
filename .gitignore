@@ -81,4 +81,4 @@ attached_assets/
 prisma/
 
 # Utils (if not needed)
-utils/
+# utils/
