@@ -46,7 +46,7 @@ export default function Sidebar() {
     queryKey: ["/api/teams", currentTeam?.id, "members"],
     enabled: !!currentTeam,
   });
-
+console.log(currentTeam)
   const navigation = [
     { name: "Dashboard", href: "/", icon: Home },
     { name: "Calendar", href: "/calendar", icon: Calendar },
@@ -55,12 +55,12 @@ export default function Sidebar() {
     { name: "Availability", href: "/availability", icon: CalendarDays },
     { name: "Bookings", href: "/bookings", icon: Clock },
     { name: "Team Members", href: "/team-members", icon: Users, count: members.length },
-    ...(currentMembership?.role === 'SUPER_ADMIN' || currentMembership?.role === 'ADMIN' ? [
-      { name: "API Keys", href: "/settings/api-keys", icon: Settings }
-    ] : []),
-    ...(currentMembership?.role === 'SUPER_ADMIN' ? [
-      { name: "API Documentation", href: "/admin/swagger", icon: FileText }
-    ] : []),
+    // ...(currentMembership?.role === 'SUPER_ADMIN' || currentMembership?.role === 'ADMIN' ? [
+    //   { name: "API Keys", href: "/settings/api-keys", icon: Settings }
+    // ] : []),
+    // ...(currentMembership?.role === 'SUPER_ADMIN' ? [
+    //   { name: "API Documentation", href: "/admin/swagger", icon: FileText }
+    // ] : []),
   ];
 
   if (!currentTeam) {
@@ -86,10 +86,10 @@ export default function Sidebar() {
             </div>
             <span className="text-sm font-medium text-gray-900 dark:text-white">{currentTeam.name}</span>
           </div>
-          <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+          {/* <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
             {currentMembership?.role === 'SUPER_ADMIN' ? 'Super Admin Access' : 
              currentMembership?.role === 'ADMIN' ? 'Admin Access' : 'Member Access'}
-          </div>
+          </div> */}
         </div>
 
         {/* Navigation Menu */}

@@ -107,7 +107,7 @@ export default function TeamSwitcher() {
 
   return (
     <>
-    <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
+    {/* <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" className="flex items-center space-x-2">
           <Avatar className="h-6 w-6">
@@ -171,7 +171,7 @@ export default function TeamSwitcher() {
           {!isSuperAdmin && <span className="text-xs text-gray-400 ml-2">(Super Admin Only)</span>}
         </DropdownMenuItem>
       </DropdownMenuContent>
-    </DropdownMenu>
+    </DropdownMenu> */}
 
     <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
       <DialogContent aria-describedby="create-team-description">
