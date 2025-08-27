@@ -78,6 +78,7 @@ export default function LoginPage({ onSuccess }: LoginPageProps) {
         description: "You have been logged in successfully",
       });
       onSuccess();
+      window.location.href = "/dashboard";
     },
     onError: (error: any) => {
       const getErrorMessage = (message: string) => {
