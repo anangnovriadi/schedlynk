@@ -1,0 +1,56 @@
+name: Deploy to Azure Container Apps
+
+on:
+  push:
+    branches: [ main, production ]
+  workflow_dispatch:
+
+env:
+  AZURE_CONTAINER_REGISTRY: schedulerliteacr
+  CONTAINER_NAME: scheduler-lite
+  RESOURCE_GROUP: scheduler-lite-rg
+  CONTAINER_APP_NAME: scheduler-lite-app
+  CONTAINER_APP_ENV: scheduler-lite-env
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Build and push to ACR
+      run: |
+        az acr build \
+          --registry ${{ env.AZURE_CONTAINER_REGISTRY }} \
+          --image ${{ env.CONTAINER_NAME }}:${{ github.sha }} \
+          --image ${{ env.CONTAINER_NAME }}:latest \
+          .
+
+    - name: Deploy to Container Apps
+      run: |
+        az containerapp update \
+          --name ${{ env.CONTAINER_APP_NAME }} \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --image ${{ env.AZURE_CONTAINER_REGISTRY }}.azurecr.io/${{ env.CONTAINER_NAME }}:${{ github.sha }}
+
+    - name: Notify deployment status
+      if: always()
+      run: |
+        if [ ${{ job.status }} == 'success' ]; then
+          echo "✅ Azure deployment successful"
+        else
+          echo "❌ Azure deployment failed"
+        fi

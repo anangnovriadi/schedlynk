@@ -1,0 +1,84 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Logs
+logs
+*.log
+
+# Cache directories
+.cache/
+.parcel-cache/
+.local/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Replit specific
+.replit
+.upm
+replit.nix
+
+# Database
+*.db
+*.sqlite
+
+# Temporary files
+tmp/
+temp/
+
+# Coverage reports
+coverage/
+.nyc_output/
+
+# Terraform
+terraform/
+*.tfstate
+*.tfstate.backup
+.terraform/
+
+# Export files
+scheduler-lite-export.tar.gz
+scheduler-lite-source-export.tar.gz
+
+# Attached assets (user uploads)
+attached_assets/
+
+# Prisma (legacy)
+prisma/
+
+# Utils (if not needed)
+utils/
